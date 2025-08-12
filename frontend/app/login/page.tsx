@@ -23,7 +23,7 @@ function LoginPage() {
 
     try {
       // 1. 调用后端登录接口，后端会设置 httpOnly 的 SSO session cookie
-      await axios.post('http://localhost:8000/api/login', formData, {
+      await axios.post('http://login.nepdi.com.cn:8000/api/login', formData, {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
@@ -32,7 +32,7 @@ function LoginPage() {
 
       // 2. 登录成功后，重新导向到 /authorize 端点
       // 这样 FastAPI 就能检测到 SSO session cookie 并生成授权码
-      const authorizeUrl = `http://localhost:8000/authorize?${searchParams.toString()}`;
+      const authorizeUrl = `http://login.nepdi.com.cn:8000/authorize?${searchParams.toString()}`;
       // 使用 window.location.replace 进行重定向，以便后端能正确处理
       window.location.replace(authorizeUrl);
       

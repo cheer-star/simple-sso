@@ -1,6 +1,6 @@
 # create_db.py
 from db import db
-from models import User, Client
+from models import User, Client, AuthCode
 from passlib.context import CryptContext
 
 # 创建密码哈希上下文
@@ -10,11 +10,14 @@ def create_tables_and_seed_data():
     print("Connecting to the database...")
     db.connect()
     
-    print("Dropping old tables (if they exist)...")
-    db.drop_tables([User, Client], safe=True)
+    # 把 AuthCode 加入到 drop_tables 中
+    db.drop_tables([User, Client, AuthCode], safe=True) 
     
     print("Creating new tables...")
-    db.create_tables([User, Client])
+    # --- 修改这里 ---
+    # 把 AuthCode 加入到 create_tables 中
+    db.create_tables([User, Client, AuthCode])
+
     
     print("Seeding initial data...")
     
@@ -29,11 +32,11 @@ def create_tables_and_seed_data():
     
     # 创建客户端应用
     Client.create(
-        client_id="client_app_1",
-        client_secret="client_app_1_secret",
-        redirect_uri="http://localhost:3001/auth/callback"
+        client_id="client_app_2",
+        client_secret="client_app_2_secret",
+        redirect_uri="http://material.nepdi.com.cn:3001/api/auth/callback"
     )
-    print("Client 'client_app_1' created.")
+    print("Client 'client_app_2' created.")
 
     print("Closing database connection.")
     db.close()

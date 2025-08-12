@@ -5,14 +5,14 @@ import { jwtDecode } from 'jwt-decode';
 import Link from 'next/link';
 
 interface UserPayload {
-  name: string;
+  sub: string;
   email: string;
   exp: number;
 }
 
 export default async function ProfilePage() {
   const cookieStore = cookies();
-  const token = (await cookieStore).get('client_session_token')?.value;
+  const token = (await cookieStore).get('sso_session_token')?.value;
 
   if (!token) {
     // 如果没有 token，重定向到首页，首页会显示登录链接
@@ -36,7 +36,7 @@ export default async function ProfilePage() {
     <div style={{ padding: '50px' }}>
       <h1>Your Profile</h1>
       <p>This is a protected page.</p>
-      <p>Name: <strong>{user.name}</strong></p>
+      <p>Name: <strong>{user.sub}</strong></p>
       <p>Email: <strong>{user.email}</strong></p>
       <Link href="/">Back to Home</Link>
     </div>

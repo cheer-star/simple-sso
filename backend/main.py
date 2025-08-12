@@ -52,7 +52,7 @@ async def db_connection_middleware(request: Request, call_next):
 # 配置 CORS (无变化)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=["http://login.nepdi.com.cn:3000", "http://material.nepdi.com.cn:3001"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -95,8 +95,10 @@ def authorize(request: Request, client_id: str, redirect_uri: str, response_type
         raise HTTPException(status_code=400, detail="Invalid client or request parameters")
 
     current_user_payload = get_current_user_from_sso_cookie(request)
+    print(current_user_payload)
     if not current_user_payload:
-        login_url = f"http://localhost:3000/login?{request.query_params}"
+        login_url = f"http://login.nepdi.com.cn:3000/login?{request.query_params}"
+        print(login_url)
         return RedirectResponse(url=login_url)
 
     # 从数据库获取用户对象
@@ -114,17 +116,23 @@ def authorize(request: Request, client_id: str, redirect_uri: str, response_type
     )
 
     final_redirect_uri = f"{redirect_uri}?code={auth_code_value}"
+    print(final_redirect_uri)
     return RedirectResponse(url=final_redirect_uri)
 
 @app.post("/token")
-def exchange_code_for_token(code: str = Form(...), client_id: str = Form(...), client_secret: str = Form(...), grant_type: str = Form(...)):
+def exchange_code_for_token(response: Response, code: str = Form(...), client_id: str = Form(...), client_secret: str = Form(...), grant_type: str = Form(...)):
     # 从数据库验证客户端
     client = Client.get_or_none(Client.client_id == client_id)
+    print(client.client_secret, client_secret)
+    print(grant_type, "authorization_code", "authorization_code")
     if not client or client.client_secret != client_secret or grant_type != "authorization_code":
         raise HTTPException(status_code=401, detail="Invalid client credentials")
 
     # 从数据库验证授权码
     auth_code = AuthCode.get_or_none(AuthCode.code == code)
+    print(auth_code.client.client_id != client_id, auth_code.client.client_id, client_id)
+    print(auth_code.is_used)
+    print(datetime.utcnow() > auth_code.exp)
     if not auth_code or auth_code.client.client_id != client_id or auth_code.is_used or datetime.utcnow() > auth_code.exp:
         raise HTTPException(status_code=400, detail="Invalid or expired authorization code")
     
@@ -137,6 +145,12 @@ def exchange_code_for_token(code: str = Form(...), client_id: str = Form(...), c
         data={"sub": user.username, "name": user.full_name, "email": user.email},
         expires_delta=timedelta(minutes=15)
     )
+    
+    response.set_cookie(
+        key=SSO_SESSION_COOKIE, value=access_token, httponly=True,
+        secure=False, samesite='lax'
+    )
+
     
     return {"access_token": access_token, "token_type": "bearer"}
 

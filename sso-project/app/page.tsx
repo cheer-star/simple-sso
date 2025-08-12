@@ -10,8 +10,8 @@ interface UserPayload {
 }
 
 export default async function Home() {
-  const cookieStore = cookies();
-  const token = (await cookieStore).get('client_session_token')?.value;
+  const cookieStore = await cookies();
+  const token = (cookieStore).get('sso_session_token')?.value;
   let user: UserPayload | null = null;
 
   if (token) {
@@ -23,10 +23,10 @@ export default async function Home() {
   }
 
   // 构建到 SSO 服务的登录链接
-  const ssoLoginUrl = new URL('http://localhost:8000/authorize');
+  const ssoLoginUrl = new URL('http://login.nepdi.com.cn:8000/authorize');
   ssoLoginUrl.searchParams.append('response_type', 'code');
-  ssoLoginUrl.searchParams.append('client_id', 'client_app_1');
-  ssoLoginUrl.searchParams.append('redirect_uri', 'http://localhost:3001/auth/callback');
+  ssoLoginUrl.searchParams.append('client_id', 'client_app_2');
+  ssoLoginUrl.searchParams.append('redirect_uri', 'http://material.nepdi.com.cn:3001/api/auth/callback');
 
   return (
     <div style={{ padding: '50px' }}>
