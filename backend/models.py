@@ -1,6 +1,6 @@
 # models.py
 import datetime
-from peewee import Model, CharField, ForeignKeyField, DateTimeField, BooleanField
+from peewee import Model, CharField, ForeignKeyField, DateTimeField, BooleanField,AutoField
 from db import db
 
 class BaseModel(Model):
@@ -8,6 +8,8 @@ class BaseModel(Model):
         database = db
 
 class User(BaseModel):
+    id = AutoField()
+    
     username = CharField(unique=True, index=True)
     full_name = CharField()
     email = CharField(unique=True)
@@ -28,6 +30,8 @@ class AuthCode(BaseModel):
     is_used = BooleanField(default=False)
     
 class AdminUser(BaseModel):
+    id = AutoField()
+    
     username = CharField(unique=True, index=True)
     full_name = CharField()
     email = CharField(unique=True)

@@ -2,7 +2,7 @@
 import os
 from datetime import datetime, timedelta, timezone
 
-from fastapi import FastAPI, Request, Response, Depends, HTTPException, Form
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, Form, Query
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
@@ -11,6 +11,8 @@ from passlib.context import CryptContext
 # 从新文件中导入
 from db import db
 from models import User, Client, AuthCode, AdminUser
+
+from pydantic import BaseModel, EmailStr # 导入 BaseModel, EmailStr
 
 # --- 配置 ---
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "a_very_secret_key_for_sso")
@@ -267,3 +269,89 @@ def get_user_stats(current_admin: AdminUser = Depends(get_current_admin_user)):
         "total_users": total_users,
         "new_users_last_7_days": new_users_last_7_days,
     }
+
+
+class UserCreate(BaseModel):
+    username: str
+    full_name: str
+    email: EmailStr
+    password: str
+
+class PasswordReset(BaseModel):
+    new_password: str
+
+
+@app.get("/api/admin/users")
+def get_all_sso_users(
+    page: int = Query(1, ge=1), 
+    page_size: int = Query(10, ge=1, le=100),
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    """获取 SSO 用户列表，支持分页。"""
+    query = User.select().order_by(User.id)
+    total_users = query.count()
+    users = query.paginate(page, page_size)
+    
+    user_list = [
+        {
+            "id": user.id,
+            "username": user.username,
+            "full_name": user.full_name,
+            "email": user.email,
+            "created_at": user.created_at.isoformat()
+        } 
+        for user in users
+    ]
+    
+    return {
+        "items": user_list,
+        "total": total_users,
+        "page": page,
+        "page_size": page_size
+    }
+
+@app.post("/api/admin/users")
+def create_sso_user(
+    user_data: UserCreate,
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    """创建一个新的 SSO 用户。"""
+    # 检查用户名或邮箱是否已存在
+    if User.get_or_none((User.username == user_data.username) | (User.email == user_data.email)):
+        raise HTTPException(status_code=409, detail="Username or email already exists.")
+    
+    new_user = User.create(
+        username=user_data.username,
+        full_name=user_data.full_name,
+        email=user_data.email,
+        hashed_password=pwd_context.hash(user_data.password)
+    )
+    return {"message": "User created successfully", "user_id": new_user.id}
+
+@app.delete("/api/admin/users/{user_id}")
+def delete_sso_user(
+    user_id: int,
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    """删除一个 SSO 用户。"""
+    user = User.get_or_none(User.id == user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    
+    user.delete_instance()
+    return {"message": "User deleted successfully"}
+
+@app.post("/api/admin/users/{user_id}/reset-password")
+def reset_user_password(
+    user_id: int,
+    password_data: PasswordReset,
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    """重置指定用户的密码。"""
+    user = User.get_or_none(User.id == user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+        
+    user.hashed_password = pwd_context.hash(password_data.new_password)
+    user.save()
+    return {"message": "Password reset successfully"}
