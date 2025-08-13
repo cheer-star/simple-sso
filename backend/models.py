@@ -24,3 +24,9 @@ class AuthCode(BaseModel):
     client = ForeignKeyField(Client, backref='auth_codes')
     exp = DateTimeField()
     is_used = BooleanField(default=False)
+    
+class AdminUser(BaseModel):
+    username = CharField(unique=True, index=True)
+    full_name = CharField()
+    email = CharField(unique=True)
+    hashed_password = CharField()
