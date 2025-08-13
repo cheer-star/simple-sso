@@ -251,3 +251,19 @@ def get_all_clients(current_admin: AdminUser = Depends(get_current_admin_user)):
         for client in clients
     ]
     return client_list
+
+@app.get("/api/admin/stats/users")
+def get_user_stats(current_admin: AdminUser = Depends(get_current_admin_user)):
+    """获取 SSO 用户的统计信息。"""
+    
+    # 1. 获取总用户数
+    total_users = User.select().count()
+    
+    # 2. 获取过去7天的新增用户数
+    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    new_users_last_7_days = User.select().where(User.created_at >= seven_days_ago).count()
+    
+    return {
+        "total_users": total_users,
+        "new_users_last_7_days": new_users_last_7_days,
+    }

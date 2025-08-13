@@ -12,6 +12,8 @@ class User(BaseModel):
     full_name = CharField()
     email = CharField(unique=True)
     hashed_password = CharField()
+    created_at = DateTimeField(default=datetime.datetime.now)
+
 
 class Client(BaseModel):
     client_id = CharField(primary_key=True, max_length=100)
