@@ -36,8 +36,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const navItems = [
     { name: '概览', href: '/dashboard' },
     { name: '用户', href: '/dashboard/users' },
-    { name: '部门', href: '#' }, // 暂时禁用
-    { name: '平台', href: '#' }, // 暂时禁用
+    { name: '部门', href: '/dashboard/departments' }, // 暂时禁用
+    { name: '平台', href: '/dashboard/platforms' }, 
     { name: '设置', href: '#' }, // 暂时禁用
   ];
 

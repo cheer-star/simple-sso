@@ -1,6 +1,7 @@
 # main.py
 import os
 from datetime import datetime, timedelta, timezone
+import secrets
 
 from fastapi import FastAPI, Request, Response, Depends, HTTPException, Form, Query
 from fastapi.responses import RedirectResponse
@@ -10,9 +11,9 @@ from passlib.context import CryptContext
 
 # 从新文件中导入
 from db import db
-from models import User, Client, AuthCode, AdminUser
+from models import User, Client, AuthCode, AdminUser, Department
 
-from pydantic import BaseModel, EmailStr # 导入 BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, HttpUrl  # 导入 BaseModel, EmailStr
 
 # --- 配置 ---
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "a_very_secret_key_for_sso")
@@ -245,7 +246,7 @@ def get_admin_profile(current_admin: AdminUser = Depends(get_current_admin_user)
 
 
 @app.get("/api/clients")
-def get_all_clients(current_admin: AdminUser = Depends(get_current_admin_user)):
+def get_all_clients_for_dashboard(current_admin: AdminUser = Depends(get_current_admin_user)):
     """获取所有客户端，现在受 get_current_admin_user 保护。"""
     clients = Client.select()
     client_list = [
@@ -254,17 +255,19 @@ def get_all_clients(current_admin: AdminUser = Depends(get_current_admin_user)):
     ]
     return client_list
 
+
 @app.get("/api/admin/stats/users")
 def get_user_stats(current_admin: AdminUser = Depends(get_current_admin_user)):
     """获取 SSO 用户的统计信息。"""
-    
+
     # 1. 获取总用户数
     total_users = User.select().count()
-    
+
     # 2. 获取过去7天的新增用户数
     seven_days_ago = datetime.utcnow() - timedelta(days=7)
-    new_users_last_7_days = User.select().where(User.created_at >= seven_days_ago).count()
-    
+    new_users_last_7_days = User.select().where(
+        User.created_at >= seven_days_ago).count()
+
     return {
         "total_users": total_users,
         "new_users_last_7_days": new_users_last_7_days,
@@ -276,6 +279,8 @@ class UserCreate(BaseModel):
     full_name: str
     email: EmailStr
     password: str
+    department_id: int | None = None
+
 
 class PasswordReset(BaseModel):
     new_password: str
@@ -283,7 +288,7 @@ class PasswordReset(BaseModel):
 
 @app.get("/api/admin/users")
 def get_all_sso_users(
-    page: int = Query(1, ge=1), 
+    page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     current_admin: AdminUser = Depends(get_current_admin_user)
 ):
@@ -291,24 +296,29 @@ def get_all_sso_users(
     query = User.select().order_by(User.id)
     total_users = query.count()
     users = query.paginate(page, page_size)
-    
+
     user_list = [
         {
             "id": user.id,
             "username": user.username,
             "full_name": user.full_name,
             "email": user.email,
-            "created_at": user.created_at.isoformat()
-        } 
+            "created_at": user.created_at.isoformat(),
+            "department": {
+                "id": user.department.id,
+                "name": user.department.name,
+            } if user.department else None
+        }
         for user in users
     ]
-    
+
     return {
         "items": user_list,
         "total": total_users,
         "page": page,
         "page_size": page_size
     }
+
 
 @app.post("/api/admin/users")
 def create_sso_user(
@@ -318,15 +328,18 @@ def create_sso_user(
     """创建一个新的 SSO 用户。"""
     # 检查用户名或邮箱是否已存在
     if User.get_or_none((User.username == user_data.username) | (User.email == user_data.email)):
-        raise HTTPException(status_code=409, detail="Username or email already exists.")
-    
+        raise HTTPException(
+            status_code=409, detail="Username or email already exists.")
+
     new_user = User.create(
         username=user_data.username,
         full_name=user_data.full_name,
         email=user_data.email,
-        hashed_password=pwd_context.hash(user_data.password)
+        hashed_password=pwd_context.hash(user_data.password),
+        department_id=user_data.department_id
     )
     return {"message": "User created successfully", "user_id": new_user.id}
+
 
 @app.delete("/api/admin/users/{user_id}")
 def delete_sso_user(
@@ -337,9 +350,10 @@ def delete_sso_user(
     user = User.get_or_none(User.id == user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
-    
+
     user.delete_instance()
     return {"message": "User deleted successfully"}
+
 
 @app.post("/api/admin/users/{user_id}/reset-password")
 def reset_user_password(
@@ -351,7 +365,183 @@ def reset_user_password(
     user = User.get_or_none(User.id == user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
-        
+
     user.hashed_password = pwd_context.hash(password_data.new_password)
     user.save()
     return {"message": "Password reset successfully"}
+
+
+class ClientCreate(BaseModel):
+    client_id: str
+    redirect_uri: HttpUrl  # 使用 HttpUrl 类型进行验证
+
+
+class ClientUpdate(BaseModel):
+    redirect_uri: HttpUrl
+
+# 我们将增强现有的 GET 端点
+
+
+@app.get("/api/admin/clients")
+def get_all_clients(current_admin: AdminUser = Depends(get_current_admin_user)):
+    """获取所有已注册的客户端应用。"""
+    clients = Client.select()
+    client_list = [
+        # 注意：我们不在列表视图中返回 client_secret
+        {"client_id": client.client_id, "redirect_uri": client.redirect_uri}
+        for client in clients
+    ]
+    return client_list
+
+
+@app.post("/api/admin/clients")
+def create_client(
+    client_data: ClientCreate,
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    """创建一个新的客户端平台。"""
+    if Client.get_or_none(Client.client_id == client_data.client_id):
+        raise HTTPException(
+            status_code=409, detail="Client ID already exists.")
+
+    # 生成一个安全的 client_secret
+    client_secret = secrets.token_hex(32)
+
+    new_client = Client.create(
+        client_id=client_data.client_id,
+        client_secret=client_secret,
+        redirect_uri=str(client_data.redirect_uri)  # 转换为字符串存储
+    )
+
+    # 在响应中返回新创建的客户端，包括密钥，以便管理员可以复制它
+    return {
+        "client_id": new_client.client_id,
+        "client_secret": new_client.client_secret,  # 仅在创建时返回
+        "redirect_uri": new_client.redirect_uri
+    }
+
+
+@app.put("/api/admin/clients/{client_id}")
+def update_client(
+    client_id: str,
+    client_data: ClientUpdate,
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    """更新客户端平台信息。"""
+    client = Client.get_or_none(Client.client_id == client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found.")
+
+    client.redirect_uri = str(client_data.redirect_uri)
+    client.save()
+
+    return {"client_id": client.client_id, "redirect_uri": client.redirect_uri}
+
+
+@app.delete("/api/admin/clients/{client_id}")
+def delete_client(
+    client_id: str,
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    """删除一个客户端平台。"""
+    client = Client.get_or_none(Client.client_id == client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found.")
+
+    client.delete_instance()
+    return {"message": "Client deleted successfully"}
+
+
+class DepartmentCreate(BaseModel):
+    name: str
+    description: str | None = None
+    parent_id: int | None = None
+
+
+class DepartmentUpdate(BaseModel):
+    name: str
+    description: str | None = None
+    parent_id: int | None = None
+
+
+def is_descendant(dept_id: int, potential_parent_id: int) -> bool:
+    """检查 potential_parent_id 是否是 dept_id 的子孙。"""
+    if dept_id == potential_parent_id:
+        return True
+    parent = Department.get_or_none(Department.id == potential_parent_id)
+    while parent:
+        if parent.id == dept_id:
+            return True
+        parent = parent.parent
+    return False
+
+
+@app.get("/api/admin/departments")
+def get_all_departments(current_admin: AdminUser = Depends(get_current_admin_user)):
+    """获取所有部门的扁平列表。"""
+    departments = Department.select()
+    return [{
+        "id": dept.id,
+        "name": dept.name,
+        "description": dept.description,
+        "parent_id": dept.parent.id if dept.parent else None
+    } for dept in departments]
+
+
+@app.post("/api/admin/departments")
+def create_department(dept_data: DepartmentCreate, current_admin: AdminUser = Depends(get_current_admin_user)):
+    """创建一个新部门。"""
+    if Department.get_or_none(Department.name == dept_data.name):
+        raise HTTPException(
+            status_code=409, detail="Department name already exists.")
+
+    new_dept = Department.create(
+        name=dept_data.name,
+        description=dept_data.description,
+        parent_id=dept_data.parent_id
+    )
+    return {
+        "id": new_dept.id,
+        "name": new_dept.name,
+        "description": new_dept.description,
+        "parent_id": new_dept.parent_id
+    }
+
+
+@app.put("/api/admin/departments/{dept_id}")
+def update_department(dept_id: int, dept_data: DepartmentUpdate, current_admin: AdminUser = Depends(get_current_admin_user)):
+    """更新一个部门。"""
+    dept = Department.get_or_none(Department.id == dept_id)
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found.")
+
+    existing_dept = Department.get_or_none(Department.name == dept_data.name)
+    if existing_dept and existing_dept.id != dept_id:
+        raise HTTPException(
+            status_code=409, detail="Department name already in use.")
+
+    if dept_data.parent_id and is_descendant(dept_id=dept_id, potential_parent_id=dept_data.parent_id):
+        raise HTTPException(
+            status_code=400, detail="A department cannot be a child of itself or its descendants.")
+
+    dept.name = dept_data.name
+    dept.description = dept_data.description
+    dept.parent_id = dept_data.parent_id
+    dept.save()
+    return {
+        "id": dept.id,
+        "name": dept.name,
+        "description": dept.description,
+        "parent_id": dept.parent_id
+    }
+
+
+@app.delete("/api/admin/departments/{dept_id}")
+def delete_department(dept_id: int, current_admin: AdminUser = Depends(get_current_admin_user)):
+    """删除一个部门。"""
+    dept = Department.get_or_none(Department.id == dept_id)
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found.")
+
+    dept.delete_instance()
+    return {"message": "Department deleted successfully."}

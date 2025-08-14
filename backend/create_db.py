@@ -1,7 +1,7 @@
 # create_db.py
 from db import db
 # 导入所有模型
-from models import User, Client, AuthCode, AdminUser
+from models import User, Client, AuthCode, AdminUser, Department
 from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -12,20 +12,27 @@ def create_tables_and_seed_data():
     
     print("Dropping old tables (if they exist)...")
     # 确保所有模型都包括在内
-    db.drop_tables([User, AdminUser, Client, AuthCode], safe=True)
-    
-    print("Creating new tables...")
-    # 确保所有模型都包括在内
-    db.create_tables([User, AdminUser, Client, AuthCode])
+    db.drop_tables([User, AdminUser, Client, AuthCode, Department], safe=True)
+    db.create_tables([User, AdminUser, Client, AuthCode, Department])
     
     print("Seeding initial data...")
+    
+    print("Seeding departments...")
+    hq = Department.create(name="Corporate HQ", description="Headquarters")
+    eng = Department.create(name="Engineering", description="Technology Division", parent=hq)
+    sales = Department.create(name="Sales", description="Sales Division", parent=hq)
+    frontend_team = Department.create(name="Frontend Team", description="Web & Mobile UI", parent=eng)
+    backend_team = Department.create(name="Backend Team", description="API & Services", parent=eng)
+    print("Hierarchical departments created.")
+
     
     # 1. 创建普通 SSO 用户
     User.create(
         username="john.doe",
         full_name="John Doe",
         email="john.doe@example.com",
-        hashed_password=pwd_context.hash("password123")
+        hashed_password=pwd_context.hash("password123"),
+        department=frontend_team # 分配到销售部
     )
     print("SSO User 'john.doe' created.")
     

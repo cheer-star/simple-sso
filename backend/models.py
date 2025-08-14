@@ -1,11 +1,19 @@
 # models.py
 import datetime
-from peewee import Model, CharField, ForeignKeyField, DateTimeField, BooleanField,AutoField
+from peewee import Model, CharField, ForeignKeyField, DateTimeField, BooleanField,AutoField,TextField, IntegerField
 from db import db
 
 class BaseModel(Model):
     class Meta:
         database = db
+
+class Department(BaseModel):
+    id = AutoField()
+    name = CharField(unique=True)
+    description = TextField(null=True)
+    
+    parent = ForeignKeyField('self', backref='children', null=True, on_delete='SET NULL')
+
 
 class User(BaseModel):
     id = AutoField()
@@ -15,6 +23,8 @@ class User(BaseModel):
     email = CharField(unique=True)
     hashed_password = CharField()
     created_at = DateTimeField(default=datetime.datetime.now)
+    
+    department = ForeignKeyField(Department, backref='users', null=True, on_delete='SET NULL')
 
 
 class Client(BaseModel):
@@ -36,3 +46,4 @@ class AdminUser(BaseModel):
     full_name = CharField()
     email = CharField(unique=True)
     hashed_password = CharField()
+
