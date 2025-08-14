@@ -47,3 +47,7 @@ class AdminUser(BaseModel):
     email = CharField(unique=True)
     hashed_password = CharField()
 
+class Setting(BaseModel):
+    # key 将是 'session_duration_admin', 'password_min_length' 等
+    key = CharField(primary_key=True)
+    value = TextField()

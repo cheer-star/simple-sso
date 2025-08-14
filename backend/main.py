@@ -11,9 +11,9 @@ from passlib.context import CryptContext
 
 # 从新文件中导入
 from db import db
-from models import User, Client, AuthCode, AdminUser, Department
+from models import Setting, User, Client, AuthCode, AdminUser, Department
 
-from pydantic import BaseModel, EmailStr, HttpUrl  # 导入 BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, HttpUrl  # 导入 BaseModel, EmailStr
 
 # --- 配置 ---
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "a_very_secret_key_for_sso")
@@ -285,6 +285,12 @@ class UserCreate(BaseModel):
 class PasswordReset(BaseModel):
     new_password: str
 
+class UserUpdate(BaseModel):
+    full_name: str
+    email: EmailStr
+    department_id: int | None = None
+    password: str | None = None # 密码可选，不提供则不更新
+
 
 @app.get("/api/admin/users")
 def get_all_sso_users(
@@ -318,6 +324,35 @@ def get_all_sso_users(
         "page": page,
         "page_size": page_size
     }
+    
+@app.put("/api/admin/users/{user_id}")
+def update_sso_user(
+    user_id: int,
+    user_data: UserUpdate,
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    """更新一个 SSO 用户的信息。"""
+    user = User.get_or_none(User.id == user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    # 检查邮箱是否与其它用户冲突
+    existing_user_by_email = User.get_or_none(User.email == user_data.email)
+    if existing_user_by_email and existing_user_by_email.id != user_id:
+        raise HTTPException(status_code=409, detail="Email already in use by another user.")
+    
+    user.full_name = user_data.full_name
+    user.email = user_data.email
+    user.department_id = user_data.department_id
+    
+    # 如果提供了新密码，则更新密码
+    if user_data.password:
+        user.hashed_password = pwd_context.hash(user_data.password)
+        
+    user.save()
+    
+    return {"message": "User updated successfully."}
+
 
 
 @app.post("/api/admin/users")
@@ -545,3 +580,57 @@ def delete_department(dept_id: int, current_admin: AdminUser = Depends(get_curre
 
     dept.delete_instance()
     return {"message": "Department deleted successfully."}
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+class SecuritySettings(BaseModel):
+    session_duration_admin_hours: int = Field(..., ge=1, description="Admin session duration in hours")
+    password_min_length: int = Field(..., ge=8, description="Minimum password length")
+    password_require_uppercase: bool
+
+@app.post("/api/admin/me/change-password")
+def change_admin_password(
+    password_data: ChangePasswordRequest,
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    # 验证当前密码
+    if not pwd_context.verify(password_data.current_password, current_admin.hashed_password): # type: ignore
+        raise HTTPException(status_code=400, detail="Incorrect current password.")
+    
+    # 可以在这里加入新密码的复杂度验证
+    
+    current_admin.hashed_password = pwd_context.hash(password_data.new_password) # type: ignore
+    current_admin.save()
+    
+    return {"message": "Password updated successfully."}
+
+# 2. 安全策略 - 获取和更新
+@app.get("/api/admin/settings/security", response_model=SecuritySettings)
+def get_security_settings(current_admin: AdminUser = Depends(get_current_admin_user)):
+    """获取安全策略设置。"""
+    settings = {s.key: s.value for s in Setting.select()}
+    # 从数据库字符串转换为正确的类型，并提供默认值
+    return SecuritySettings(
+        session_duration_admin_hours=int(settings.get("session_duration_admin_hours", 8)),
+        password_min_length=int(settings.get("password_min_length", 8)),
+        password_require_uppercase=settings.get("password_require_uppercase", "true").lower() == "true"
+    )
+
+@app.put("/api/admin/settings/security")
+def update_security_settings(
+    settings_data: SecuritySettings,
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    """更新安全策略设置。"""
+    # 使用 peewee 的 insert(...).on_conflict_replace() 进行批量更新/插入
+    data_to_save = [
+        {"key": "session_duration_admin_hours", "value": str(settings_data.session_duration_admin_hours)},
+        {"key": "password_min_length", "value": str(settings_data.password_min_length)},
+        {"key": "password_require_uppercase", "value": str(settings_data.password_require_uppercase).lower()}
+    ]
+    Setting.insert_many(data_to_save).on_conflict_replace().execute()
+    
+    return {"message": "Security settings updated successfully."}

@@ -1,7 +1,7 @@
 # create_db.py
 from db import db
 # 导入所有模型
-from models import User, Client, AuthCode, AdminUser, Department
+from models import User, Client, AuthCode, AdminUser, Department,Setting 
 from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -12,8 +12,9 @@ def create_tables_and_seed_data():
     
     print("Dropping old tables (if they exist)...")
     # 确保所有模型都包括在内
-    db.drop_tables([User, AdminUser, Client, AuthCode, Department], safe=True)
-    db.create_tables([User, AdminUser, Client, AuthCode, Department])
+    db.drop_tables([User, AdminUser, Client, AuthCode, Department, Setting], safe=True)
+    db.create_tables([User, AdminUser, Client, AuthCode, Department, Setting])
+
     
     print("Seeding initial data...")
     
@@ -24,6 +25,12 @@ def create_tables_and_seed_data():
     frontend_team = Department.create(name="Frontend Team", description="Web & Mobile UI", parent=eng)
     backend_team = Department.create(name="Backend Team", description="API & Services", parent=eng)
     print("Hierarchical departments created.")
+    
+    print("Seeding default settings...")
+    Setting.create(key="session_duration_admin_hours", value="8")
+    Setting.create(key="password_min_length", value="8")
+    Setting.create(key="password_require_uppercase", value="true")
+    print("Default settings created.")
 
     
     # 1. 创建普通 SSO 用户

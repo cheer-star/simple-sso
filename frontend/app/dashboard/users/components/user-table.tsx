@@ -26,21 +26,27 @@ export function UserTable({ users, isLoading, onActionComplete }: UserTableProps
             <TableHead>Username</TableHead>
             <TableHead>Full Name</TableHead>
             <TableHead>Email</TableHead>
+            {/* 新增列 */}
+            <TableHead>Department</TableHead>
             <TableHead>Joined At</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading ? (
-            <TableRow><TableCell colSpan={5} className="text-center h-24">Loading users...</TableCell></TableRow>
+            <TableRow><TableCell colSpan={6} className="text-center h-24">Loading users...</TableCell></TableRow>
           ) : users.length === 0 ? (
-            <TableRow><TableCell colSpan={5} className="text-center h-24">No users found.</TableCell></TableRow>
+            <TableRow><TableCell colSpan={6} className="text-center h-24">No users found.</TableCell></TableRow>
           ) : (
             users.map((user) => (
               <TableRow key={user.id}>
                 <TableCell className="font-medium">{user.username}</TableCell>
                 <TableCell>{user.full_name}</TableCell>
                 <TableCell>{user.email}</TableCell>
+                {/* 显示部门名称，如果不存在则显示 N/A */}
+                <TableCell className="text-muted-foreground">
+                  {user.department ? user.department.name : 'N/A'}
+                </TableCell>
                 <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
                 <TableCell className="text-right">
                   <UserActions user={user} onActionComplete={onActionComplete} />
