@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timedelta, timezone
 import secrets
 
-from fastapi import FastAPI, Request, Response, Depends, HTTPException, Form, Query
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, Form, Query, UploadFile, File
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
@@ -285,11 +285,12 @@ class UserCreate(BaseModel):
 class PasswordReset(BaseModel):
     new_password: str
 
+
 class UserUpdate(BaseModel):
     full_name: str
     email: EmailStr
     department_id: int | None = None
-    password: str | None = None # 密码可选，不提供则不更新
+    password: str | None = None  # 密码可选，不提供则不更新
 
 
 @app.get("/api/admin/users")
@@ -324,7 +325,8 @@ def get_all_sso_users(
         "page": page,
         "page_size": page_size
     }
-    
+
+
 @app.put("/api/admin/users/{user_id}")
 def update_sso_user(
     user_id: int,
@@ -339,20 +341,20 @@ def update_sso_user(
     # 检查邮箱是否与其它用户冲突
     existing_user_by_email = User.get_or_none(User.email == user_data.email)
     if existing_user_by_email and existing_user_by_email.id != user_id:
-        raise HTTPException(status_code=409, detail="Email already in use by another user.")
-    
+        raise HTTPException(
+            status_code=409, detail="Email already in use by another user.")
+
     user.full_name = user_data.full_name
     user.email = user_data.email
     user.department_id = user_data.department_id
-    
+
     # 如果提供了新密码，则更新密码
     if user_data.password:
         user.hashed_password = pwd_context.hash(user_data.password)
-        
-    user.save()
-    
-    return {"message": "User updated successfully."}
 
+    user.save()
+
+    return {"message": "User updated successfully."}
 
 
 @app.post("/api/admin/users")
@@ -586,10 +588,14 @@ class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
 
+
 class SecuritySettings(BaseModel):
-    session_duration_admin_hours: int = Field(..., ge=1, description="Admin session duration in hours")
-    password_min_length: int = Field(..., ge=8, description="Minimum password length")
+    session_duration_admin_hours: int = Field(
+        ..., ge=1, description="Admin session duration in hours")
+    password_min_length: int = Field(..., ge=8,
+                                     description="Minimum password length")
     password_require_uppercase: bool
+
 
 @app.post("/api/admin/me/change-password")
 def change_admin_password(
@@ -597,27 +603,34 @@ def change_admin_password(
     current_admin: AdminUser = Depends(get_current_admin_user)
 ):
     # 验证当前密码
-    if not pwd_context.verify(password_data.current_password, current_admin.hashed_password): # type: ignore
-        raise HTTPException(status_code=400, detail="Incorrect current password.")
-    
+    if not pwd_context.verify(password_data.current_password, current_admin.hashed_password):  # type: ignore
+        raise HTTPException(
+            status_code=400, detail="Incorrect current password.")
+
     # 可以在这里加入新密码的复杂度验证
-    
-    current_admin.hashed_password = pwd_context.hash(password_data.new_password) # type: ignore
+
+    current_admin.hashed_password = pwd_context.hash( # type: ignore
+        password_data.new_password)  # type: ignore
     current_admin.save()
-    
+
     return {"message": "Password updated successfully."}
 
 # 2. 安全策略 - 获取和更新
+
+
 @app.get("/api/admin/settings/security", response_model=SecuritySettings)
 def get_security_settings(current_admin: AdminUser = Depends(get_current_admin_user)):
     """获取安全策略设置。"""
     settings = {s.key: s.value for s in Setting.select()}
     # 从数据库字符串转换为正确的类型，并提供默认值
     return SecuritySettings(
-        session_duration_admin_hours=int(settings.get("session_duration_admin_hours", 8)),
+        session_duration_admin_hours=int(
+            settings.get("session_duration_admin_hours", 8)),
         password_min_length=int(settings.get("password_min_length", 8)),
-        password_require_uppercase=settings.get("password_require_uppercase", "true").lower() == "true"
+        password_require_uppercase=settings.get(
+            "password_require_uppercase", "true").lower() == "true"
     )
+
 
 @app.put("/api/admin/settings/security")
 def update_security_settings(
@@ -627,10 +640,230 @@ def update_security_settings(
     """更新安全策略设置。"""
     # 使用 peewee 的 insert(...).on_conflict_replace() 进行批量更新/插入
     data_to_save = [
-        {"key": "session_duration_admin_hours", "value": str(settings_data.session_duration_admin_hours)},
-        {"key": "password_min_length", "value": str(settings_data.password_min_length)},
-        {"key": "password_require_uppercase", "value": str(settings_data.password_require_uppercase).lower()}
+        {"key": "session_duration_admin_hours", "value": str(
+            settings_data.session_duration_admin_hours)},
+        {"key": "password_min_length", "value": str(
+            settings_data.password_min_length)},
+        {"key": "password_require_uppercase", "value": str(
+            settings_data.password_require_uppercase).lower()}
     ]
     Setting.insert_many(data_to_save).on_conflict_replace().execute()
-    
+
     return {"message": "Security settings updated successfully."}
+
+
+@app.post("/api/admin/clients/{client_id}/reveal-secret")
+def reveal_client_secret(
+    client_id: str,
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    """安全地获取一个客户端的密钥。"""
+    client = Client.get_or_none(Client.client_id == client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found.")
+
+    # 仅在需要时返回密钥，不在常规列表中显示
+    return {"client_id": client.client_id, "client_secret": client.client_secret}
+
+
+@app.post("/api/admin/clients/{client_id}/reset-secret")
+def reset_client_secret(
+    client_id: str,
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    """为客户端重新生成一个新的密钥。"""
+    client = Client.get_or_none(Client.client_id == client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found.")
+
+    new_secret = secrets.token_hex(32)
+    client.client_secret = new_secret
+    client.save()
+
+    # 返回新生成的密钥，以便管理员可以立即复制
+    return {"client_id": client.client_id, "client_secret": new_secret}
+
+
+@app.post("/api/admin/departments/import")
+async def import_departments(
+    file: UploadFile = File(...),
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    """从 Excel 文件导入部门结构，此操作会覆盖所有现有部门。"""
+    if not file.filename.endswith(('.xlsx', '.xls')): # type: ignore
+        raise HTTPException(status_code=400, detail="Invalid file type. Please upload an Excel file (.xlsx, .xls).")
+
+    try:
+        import pandas as pd
+        await file.seek(0)
+        # 读取时将所有数据视为字符串，避免自动类型推断问题
+        df = pd.read_excel(file.file, engine='openpyxl', dtype=str)
+        # 将 NaN 值替换为空字符串
+        df.fillna('', inplace=True)
+        
+        required_columns = {'id', 'name', 'parent_id'}
+        if not required_columns.issubset(df.columns):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Missing required columns. File must contain: {', '.join(required_columns)}"
+            )
+
+        with db.atomic() as transaction:
+            try:
+                User.update(department=None).execute()
+                Department.delete().execute()
+                
+                departments_data = df.to_dict('records')
+                external_id_to_new_db_id_map = {}
+
+                # --- 第一阶段：创建部门，建立映射 ---
+                for row in departments_data:
+                    external_id = str(row.get('id', '')).strip()
+                    name = str(row.get('name', '')).strip()
+
+                    if not name or not external_id:
+                        continue
+                    
+                    # 规范化 ID：移除可能由浮点数转换带来的 ".0"
+                    normalized_id = external_id.removesuffix('.0')
+
+                    new_dept = Department.create(
+                        name=name,
+                        description=str(row.get('description', ''))
+                    )
+                    external_id_to_new_db_id_map[normalized_id] = new_dept.id
+
+                # --- 第二阶段：更新父子关系 ---
+                for row in departments_data:
+                    external_id = str(row.get('id', '')).strip()
+                    external_parent_id = str(row.get('parent_id', '')).strip()
+
+                    if not external_id or not external_parent_id:
+                        continue
+
+                    # 对 ID 和 parent_id 使用相同的规范化方法
+                    normalized_id = external_id.removesuffix('.0')
+                    normalized_parent_id = external_parent_id.removesuffix('.0')
+
+                    new_db_id = external_id_to_new_db_id_map.get(normalized_id)
+                    new_db_parent_id = external_id_to_new_db_id_map.get(normalized_parent_id)
+
+                    if new_db_id and new_db_parent_id:
+                        dept_to_update = Department.get(Department.id == new_db_id)
+                        dept_to_update.parent = new_db_parent_id
+                        dept_to_update.save()
+
+            except Exception as e:
+                transaction.rollback()
+                raise HTTPException(status_code=500, detail=f"An error occurred during import: {e}")
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process file: {e}")
+
+    # 过滤掉没有名称的行来计算真实的导入数量
+    valid_rows = df[df['name'].str.strip() != '']
+    return {"message": f"Successfully imported {len(valid_rows)} departments."}
+
+
+@app.post("/api/admin/users/import")
+async def import_users(
+    file: UploadFile = File(...),
+    overwrite: bool = Query(False, description="If true, update existing users. Otherwise, skip them."),
+    current_admin: AdminUser = Depends(get_current_admin_user)
+):
+    """从 Excel 文件导入用户。"""
+    if not file.filename.endswith(('.xlsx', '.xls')): # type: ignore
+        raise HTTPException(status_code=400, detail="Invalid file type. Please upload an Excel file.")
+
+    try:
+        import pandas as pd
+        await file.seek(0)
+        df = pd.read_excel(file.file, engine='openpyxl', dtype=str).fillna('')
+        
+        required_columns = {'username', 'email', 'full_name', 'password'}
+        if not required_columns.issubset(df.columns):
+            raise HTTPException(status_code=400, detail=f"Missing required columns: {', '.join(required_columns - set(df.columns))}")
+        
+        users_data = df.to_dict('records')
+        new_users_count = 0
+        updated_users_count = 0
+        skipped_users_count = 0
+        errors = []
+
+        # 提前获取所有部门名称到ID的映射，减少数据库查询
+        departments_map = {dept.name: dept.id for dept in Department.select()}
+        # 提前获取所有现有用户的username和email，用于快速查找
+        existing_users_map = {
+            u.username: u for u in User.select()
+        }
+        existing_emails_set = {u.email for u in existing_users_map.values()}
+
+        with db.atomic() as transaction:
+            try:
+                for index, row in enumerate(users_data):
+                    row_num = index + 2 # Excel 行号
+                    username = str(row.get('username', '')).strip()
+                    email = str(row.get('email', '')).strip().lower()
+                    
+                    if not username or not email:
+                        errors.append(f"Row {row_num}: Missing username or email.")
+                        continue
+
+                    department_name = str(row.get('department_name', '')).strip()
+                    department_id = departments_map.get(department_name) if department_name else None
+
+                    if department_name and not department_id:
+                        errors.append(f"Row {row_num}: Department '{department_name}' not found.")
+                        continue
+
+                    existing_user = existing_users_map.get(username)
+
+                    if existing_user: # 用户名已存在
+                        if overwrite:
+                            existing_user.full_name = str(row.get('full_name', existing_user.full_name)).strip()
+                            existing_user.department_id = department_id
+                            # 注意：我们不通过导入更新密码
+                            existing_user.save()
+                            updated_users_count += 1
+                        else:
+                            skipped_users_count += 1
+                        continue # 处理下一行
+                    
+                    if email in existing_emails_set: # 邮箱已存在
+                         if overwrite:
+                             errors.append(f"Row {row_num}: Email '{email}' exists for another user. Cannot update by email.")
+                         skipped_users_count += 1
+                         continue
+
+                    # 创建新用户
+                    password = str(row.get('password', '')).strip()
+                    if not password:
+                        errors.append(f"Row {row_num}: Password is required for new user '{username}'.")
+                        continue
+                    
+                    User.create(
+                        username=username,
+                        email=email,
+                        full_name=str(row.get('full_name', '')).strip(),
+                        hashed_password=pwd_context.hash(password),
+                        department_id=department_id
+                    )
+                    new_users_count += 1
+                    # 更新快速查找集合以处理文件内重复项
+                    existing_emails_set.add(email)
+
+
+            except Exception as e:
+                transaction.rollback()
+                raise HTTPException(status_code=500, detail=f"An error occurred during transaction: {e}")
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process file: {e}")
+
+    return {
+        "message": "User import process completed.",
+        "new_users": new_users_count,
+        "updated_users": updated_users_count,
+        "skipped_users": skipped_users_count,
+        "errors": errors
+    }

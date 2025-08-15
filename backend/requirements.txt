@@ -6,3 +6,5 @@ Authlib
 python-jose[cryptography]
 python-multipart
 Jinja2
+pandas 
+openpyxl

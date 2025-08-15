@@ -13,7 +13,7 @@ export default function SettingsPage() {
       <Tabs defaultValue="my-account" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="my-account">My Account</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
+          <TabsTrigger value="security" disabled>Security</TabsTrigger>
         </TabsList>
         <TabsContent value="my-account" className="mt-6">
           <MyAccountForm />

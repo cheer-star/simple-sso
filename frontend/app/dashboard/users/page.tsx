@@ -9,6 +9,7 @@ import { CreateUserButton } from './components/create-user-button';
 import { UserTable } from './components/user-table';
 
 import api from '@/lib/api';
+import { ImportUsersButton } from './components/import-users-button';
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -39,13 +40,17 @@ export default function UsersPage() {
           <h1 className="text-2xl font-bold">User Management</h1>
           <p className="text-muted-foreground">Manage all SSO users in the system.</p>
         </div>
-        <CreateUserButton onUserCreated={fetchUsers} />
+        <div className="flex items-center space-x-2">
+          <ImportUsersButton onActionComplete={fetchUsers} />
+          <CreateUserButton onUserCreated={fetchUsers} />
+        </div>
+
       </div>
-      
-      <UserTable 
-        users={users} 
-        isLoading={isLoading} 
-        onActionComplete={fetchUsers} 
+
+      <UserTable
+        users={users}
+        isLoading={isLoading}
+        onActionComplete={fetchUsers}
       />
     </div>
   );

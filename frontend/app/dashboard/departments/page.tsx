@@ -16,6 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 
+import { ImportDepartmentsButton } from './components/import-departments-button';
+
 export default function DepartmentsPage() {
   const [flatDepartments, setFlatDepartments] = useState<Department[]>([]);
   const [tree, setTree] = useState<DepartmentNode[]>([]);
@@ -97,9 +99,13 @@ export default function DepartmentsPage() {
           <h1 className="text-2xl font-bold">Department Structure</h1>
           <p className="text-muted-foreground">Manage the organizational hierarchy.</p>
         </div>
-        <Button onClick={() => handleOpenEdit()}>
-          <PlusCircle className="mr-2 h-4 w-4" /> New Top-Level Department
-        </Button>
+        <div className="flex items-center space-x-2">
+          <ImportDepartmentsButton onActionComplete={fetchDepartments} />
+          <Button onClick={() => handleOpenEdit()}>
+            <PlusCircle className="mr-2 h-4 w-4" /> New Top-Level Department
+          </Button>
+        </div>
+
       </div>
 
       <div className="p-4 border rounded-lg min-h-[300px]">
