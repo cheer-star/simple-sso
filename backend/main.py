@@ -183,7 +183,7 @@ def exchange_code_for_token(response: Response, code: str = Form(...), client_id
     
     access_token = create_jwt_token(
         data=token_data,
-        expires_delta=timedelta(minutes=15)
+        expires_delta=timedelta(days=1)
     )
 
     response.set_cookie(
