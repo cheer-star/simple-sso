@@ -164,8 +164,25 @@ def exchange_code_for_token(response: Response, code: str = Form(...), client_id
     auth_code.save()
 
     user = auth_code.user
+    
+    token_data = {
+        # 用户基本信息
+        "sub": user.username,
+        "name": user.full_name,
+        "email": user.email,
+        
+        # --- 补充的信息 ---
+        # 部门信息 (如果用户有部门)
+        "department": user.department.name if user.department else None,
+        
+        # 平台信息 (明确令牌的受众)
+        "platform": client.client_id, # 使用 'platform' 作为键名，比 'aud' 更直观
+        "aud": client.client_id,      # 同时保留标准的 'aud' 声明
+        "iss": "my-sso-system"        # 令牌颁发者
+    }
+    
     access_token = create_jwt_token(
-        data={"sub": user.username, "name": user.full_name, "email": user.email},
+        data=token_data,
         expires_delta=timedelta(minutes=15)
     )
 
